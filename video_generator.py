@@ -5,8 +5,7 @@ import random
 import json
 import ffmpeg
 from ffmpeg._run import Error as FFmpegError
-import elevenlabs
-from elevenlabs.client import ElevenLabs
+import wave
 from google import genai
 from google.genai import types
 from io import BytesIO
@@ -17,20 +16,16 @@ import re
 IMAGE_DIR = "output_images"
 VIDEO_DIR = "output_videos"
 MUSIC_DIR = "music"
-elevenlabs = ElevenLabs(
-            api_key=os.getenv("ELEVENLABS_API_KEY")  # Or replace with your API key directly
-        )
 
 # ========================
 # 1. SETUP & CONFIGURATION
 # ========================
 
-def initialize_clients(google_api_key, elevenlabs_api_key):
+def initialize_clients(google_api_key, elevenlabs_api_key=None):
     """Initializes all API clients and creates necessary directories."""
     try:
-        # Create Gemini client for story generation and image generation
+        # Create Gemini client for story generation, image generation, and TTS
         gemini_client = genai.Client(api_key=google_api_key)
-        
         
         # Ensure output directories exist
         os.makedirs(IMAGE_DIR, exist_ok=True)
@@ -113,40 +108,84 @@ def clean_story(text):
     text = re.sub(r'[^\w\s.,!?;:\'-]', '', text)
     return text
 
-def generate_narration_elevenlabs(story_text, filename, elevenlabs_client=None, voice_id="G17SuINrv2H9FC6nvetn"):
+def wave_file(filename, pcm, channels=1, rate=24000, sample_width=2):
+    """Helper function to save PCM data as a WAV file."""
+    with wave.open(filename, "wb") as wf:
+        wf.setnchannels(channels)
+        wf.setsampwidth(sample_width)
+        wf.setframerate(rate)
+        wf.writeframes(pcm)
+
+def generate_narration_elevenlabs(story_text, filename, elevenlabs_client=None, voice_id="Kore"):
     """
-    Generates narration audio using ElevenLabs TTS and saves it as an MP3 file.
+    Generates narration audio using Gemini TTS and saves it as a WAV file.
+    Note: Despite the function name, this now uses Gemini TTS for consistency.
     """
-    print("🎧 Generating narration with ElevenLabs TTS...")
+    print("🎧 Generating narration with Gemini TTS...")
     
     # Clean the story text
     story_text = clean_story(story_text)
     
     try:
-        # Stream audio using the direct elevenlabs module
-        audio_stream = elevenlabs.text_to_speech.stream(
-            text=story_text,
-            voice_id=voice_id,
-            model_id="eleven_multilingual_v2"
+        # Use Gemini client for TTS generation
+        client = genai.Client()
+        
+        response = client.models.generate_content(
+            model="gemini-2.5-flash-preview-tts",
+            contents=f"Say calmly and with emotion: {story_text}",
+            config=types.GenerateContentConfig(
+                response_modalities=["AUDIO"],
+                speech_config=types.SpeechConfig(
+                    voice_config=types.VoiceConfig(
+                        prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                            voice_name=voice_id,
+                        )
+                    )
+                ),
+            )
         )
-
-        # Collect chunks
-        audio_bytes = b""
-        for chunk in audio_stream:
-            if isinstance(chunk, bytes):
-                audio_bytes += chunk
-
-        # Save to file
+        
+        # Fix: Handle the response structure properly
+        audio_data = None
+        
+        # Check if response has candidates and iterate through parts
+        if response.candidates and len(response.candidates) > 0:
+            candidate = response.candidates[0]
+            if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                for part in candidate.content.parts:
+                    if hasattr(part, 'inline_data') and part.inline_data is not None:
+                        audio_data = part.inline_data.data
+                        break
+        
+        if audio_data is None:
+            raise ValueError("No audio data found in response")
+        
+        # Save to file using wave module
         os.makedirs(VIDEO_DIR, exist_ok=True)
+        # Change extension to .wav since Gemini outputs WAV format
+        if filename.endswith('.mp3'):
+            filename = filename.replace('.mp3', '.wav')
         audio_path = os.path.join(VIDEO_DIR, filename)
-        with open(audio_path, "wb") as f:
-            f.write(audio_bytes)
-
-        print(f"✅ Narration saved as MP3: {audio_path}")
+        
+        # Use the wave_file helper function to save
+        wave_file(audio_path, audio_data)
+        
+        print(f"✅ Narration saved as WAV: {audio_path}")
         return audio_path
 
     except Exception as e:
-        print(f"❌ ElevenLabs TTS Error: {str(e)}")
+        print(f"❌ Gemini TTS Error: {str(e)}")
+        print(f"Response structure debug: {type(response)}")
+        if hasattr(response, 'candidates'):
+            print(f"Candidates: {len(response.candidates) if response.candidates else 0}")
+            if response.candidates and len(response.candidates) > 0:
+                candidate = response.candidates[0]
+                print(f"Candidate content: {hasattr(candidate, 'content')}")
+                if hasattr(candidate, 'content'):
+                    print(f"Content parts: {hasattr(candidate.content, 'parts')}")
+                    if hasattr(candidate.content, 'parts'):
+                        print(f"Parts type: {type(candidate.content.parts)}")
+                        print(f"Parts length: {len(candidate.content.parts) if candidate.content.parts else 0}")
         raise
 
 # ========================
