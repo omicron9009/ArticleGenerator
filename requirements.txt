@@ -6,3 +6,5 @@ mutagen
 ffmpeg-python
 requests
 Pillow
+numpy
+pandas
