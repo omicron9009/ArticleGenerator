@@ -239,15 +239,13 @@ st.markdown("""
 
 # --- API Key Management ---
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+# ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 
 if not GOOGLE_API_KEY:
     st.error("🔑 Google API key not found. Please ensure your .env file contains GOOGLE_API_KEY.")
     st.stop()
 
-if not ELEVENLABS_API_KEY:
-    st.error("🔑 ElevenLabs API key not found. Please ensure your .env file contains ELEVENLABS_API_KEY.")
-    st.stop()
+
 
 # --- Initialize Session State ---
 if 'generation_complete' not in st.session_state:
@@ -279,7 +277,7 @@ if submitted:
 
     try:
         # Initialize clients (only returns gemini_client now since elevenlabs uses global API key)
-        gemini_client = initialize_clients(GOOGLE_API_KEY, ELEVENLABS_API_KEY)
+        gemini_client = initialize_clients(GOOGLE_API_KEY)
 
         with st.spinner("🧠 Crafting your story with AI brilliance..."):
             st.session_state.story_data = generate_story_with_prompts(user_prompt, gemini_client)
