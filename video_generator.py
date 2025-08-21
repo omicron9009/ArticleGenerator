@@ -10,6 +10,13 @@ from elevenlabs.client import ElevenLabs
 from mutagen.mp3 import MP3
 from io import BytesIO
 from PIL import Image
+import os
+import google.genai as genai
+from google.genai import types
+# pydub is used for handling audio conversion
+# You may need to install it: pip install pydub
+# pydub also requires ffmpeg to be installed on your system.
+from pydub import AudioSegment
 
 # Define directories
 IMAGE_DIR = "output_images"
@@ -104,25 +111,64 @@ def generate_image_with_dalle(prompt, index, openai_client):
         print(f"❌ Error generating image for scene {index+1}: {e}")
         raise
 
-def generate_narration(story_text, filename, elevenlabs_client, voice_id="pNInz6obpgDQGcFmaJgB"): # Adam voice
-    """Generates narration audio using ElevenLabs."""
-    print("🎧 Generating narration...")
+def generate_narration(story_text, filename, gemini_client, voice_id="Kore"):
+    """
+    Generates narration audio as an MP3 file using the Gemini API.
+
+    Args:
+        story_text (str): The text to be converted to speech.
+        filename (str): The name of the output audio file (e.g., "narration.mp3").
+        gemini_client (genai.GenerativeModel): An initialized Gemini API client.
+        voice_id (str): The prebuilt voice name for generation (e.g., 'Kore', 'Puck').
+    
+    Returns:
+        str: The full path to the saved audio file, or None if an error occurred.
+    """
+    print("🎧 Generating narration with Gemini (for MP3 output)...")
     try:
-        audio_stream = elevenlabs_client.text_to_speech.stream(
-            text=story_text,
-            voice_id=voice_id,
-            model_id="eleven_multilingual_v2"
+        # --- Gemini API Call ---
+        # This remains the same, as we get raw PCM audio data from the API.
+        response = gemini_client.generate_content(
+           model="gemini-2.5-flash-preview-tts",
+           contents=[f"Say calmly: {story_text}"],
+           generation_config=types.GenerationConfig(
+              response_modalities=["AUDIO"],
+              speech_config=types.SpeechConfig(
+                 voice_config=types.VoiceConfig(
+                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                       voice_name=voice_id,
+                    )
+                 )
+              ),
+           )
+        )
+
+        # Extract the raw audio data from the response
+        audio_data = response.candidates[0].content.parts[0].inline_data.data
+        
+        # --- File Saving (MP3 Conversion) ---
+        # The API returns raw PCM data. We use pydub to interpret this data
+        # and then export it to the desired MP3 format.
+        audio_path = os.path.join(VIDEO_DIR, filename)
+        
+        # Create an AudioSegment from the raw PCM data
+        # Gemini TTS provides 24000 Hz, 16-bit (2 bytes), mono (1 channel) audio
+        audio_segment = AudioSegment(
+            data=audio_data,
+            sample_width=2,  # 2 bytes = 16-bit
+            frame_rate=24000,
+            channels=1
         )
         
-        audio_path = os.path.join(VIDEO_DIR, filename)
-        with open(audio_path, "wb") as f:
-            for chunk in audio_stream:
-                f.write(chunk)
-                
-        print("✅ Narration saved:", audio_path)
+        # Export the audio segment to an MP3 file
+        audio_segment.export(audio_path, format="mp3")
+            
+        print(f"✅ Narration saved as MP3: {audio_path}")
         return audio_path
+        
     except Exception as e:
-        print(f"❌ ElevenLabs TTS Error: {str(e)}")
+        # --- Error Handling ---
+        print(f"❌ Gemini TTS Error or MP3 Conversion Error: {str(e)}")
         raise
 
 # ================================================================
@@ -227,4 +273,5 @@ def cleanup_images():
     files = glob.glob(os.path.join(IMAGE_DIR, "*.png"))
     for f in files:
         os.remove(f)
+
     print("🧹 Cleaned up generated images.")
