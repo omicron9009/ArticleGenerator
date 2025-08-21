@@ -9,4 +9,5 @@ Pillow
 numpy
 pandas
 pydub
+google-genai
 
