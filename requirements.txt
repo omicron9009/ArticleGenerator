@@ -1,0 +1,8 @@
+streamlit
+openai
+elevenlabs
+python-dotenv
+mutagen
+ffmpeg-python
+requests
+Pillow
