@@ -193,8 +193,8 @@ def generate_narration_elevenlabs(story_text, filename, elevenlabs_client=None, 
 # ========================
 
 def images_to_video_ffmpeg(narration_audio_path, video_title="final_video"):
-    """Creates a video from images, narration, and music using FFmpeg."""
-    print("🎬 Assembling the video...")
+    """Creates a memory-optimized video from images, narration, and music using FFmpeg."""
+    print("🎬 Assembling the video with memory optimization...")
     try:
         image_paths = sorted(glob.glob(os.path.join(IMAGE_DIR, "*.png")))
         if not image_paths:
@@ -212,40 +212,48 @@ def images_to_video_ffmpeg(narration_audio_path, video_title="final_video"):
         else:
             bg_music_path = random.choice(music_files)
 
-        # Create slideshow from images
+        final_output_path = os.path.join(VIDEO_DIR, f"{video_title.replace(' ', '_').lower()}.mp4")
+        
+        # Create slideshow with memory optimization
         inputs = []
         for img in image_paths:
             inputs.append(
                 ffmpeg.input(img, loop=1, t=duration_per_image)
-                .filter('scale', 1024, 1024)
-                .filter('zoompan', z='1.1', d=duration_per_image*25, s='1024x1024')
+                .filter('scale', 640, 640)  # Smaller resolution
+                .filter('fps', fps=20)      # Lower FPS
             )
 
-        # Concatenate all image inputs
-        video_stream = ffmpeg.concat(*inputs, v=1, a=0).filter('fps', fps=25)
+        # Concatenate all image inputs with memory optimization
+        video_stream = ffmpeg.concat(*inputs, v=1, a=0)
 
         # Prepare audio inputs
         narration_audio = ffmpeg.input(narration_audio_path)
         
         if bg_music_path:
-            music_audio = ffmpeg.input(bg_music_path, stream_loop=-1).filter('volume', 0.2)
+            music_audio = ffmpeg.input(bg_music_path, stream_loop=-1).filter('volume', 0.15)
             # Mix audio tracks
-            mixed_audio = ffmpeg.filter([narration_audio, music_audio], 'amix', duration='first', dropout_transition=1)
+            mixed_audio = ffmpeg.filter([narration_audio, music_audio], 'amix', duration='first')
         else:
             mixed_audio = narration_audio
         
-        final_output_path = os.path.join(VIDEO_DIR, f"{video_title.replace(' ', '_').lower()}.mp4")
-        
-        # Combine video and mixed audio
+        # Combine video and mixed audio with memory constraints
         (
             ffmpeg
             .output(video_stream, mixed_audio, final_output_path, 
-                   vcodec='libx264', acodec='aac', pix_fmt='yuv420p', shortest=None)
+                   vcodec='libx264', 
+                   acodec='aac', 
+                   pix_fmt='yuv420p',
+                   preset='ultrafast',  # Fast encoding
+                   crf=30,             # Higher compression
+                   maxrate='600k',     # Lower bitrate
+                   bufsize='1200k',    # Smaller buffer
+                   ac=1,               # Mono audio
+                   ar=22050)           # Lower sample rate
             .overwrite_output()
             .run(quiet=True)
         )
         
-        print(f"✅ Final video saved: {final_output_path}")
+        print(f"✅ Memory-optimized video saved: {final_output_path}")
         return final_output_path
 
     except FFmpegError as e:
@@ -256,7 +264,6 @@ def images_to_video_ffmpeg(narration_audio_path, video_title="final_video"):
     except Exception as ex:
         print(f"❌ General video creation error: {ex}")
         raise
-
 # ========================
 # 4. UTILITY FUNCTIONS
 # ========================
