@@ -323,8 +323,8 @@ st.markdown("""
 
 # --- API Key Management ---
 try:
-    OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
-    ELEVENLABS_API_KEY = st.secrets["ELEVENLABS_API_KEY"]
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 except KeyError:
     st.error("🔑 API keys not found in st.secrets. Please add them to your .streamlit/secrets.toml file.")
     st.stop()
@@ -447,4 +447,5 @@ st.markdown("""
 <div style="text-align: center; padding: 40px 0 20px 0; color: rgba(255,255,255,0.6);">
     <p style="font-size: 14px; margin: 0;">✨ Powered by AI Magic & Creative Vision ✨</p>
 </div>
+
 """, unsafe_allow_html=True)
